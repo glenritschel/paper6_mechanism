@@ -1,0 +1,17 @@
+name: paper6-mechanism
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - pyyaml
+  - scanpy
+  - anndata
+  - h5py
+  - pip:
+      - liana

@@ -1,0 +1,62 @@
+# configs/paper6.yaml
+
+gse195452:
+  adata_path: ../paper4_btcells_liana/work/scored_bt/ssc_pbmc_gse195452.BT.scored.h5ad
+
+  # required obs keys
+  cell_type_key: cell_type
+  sample_key: sample_id
+
+  # B activation + T programs from Paper 4
+  b_activation_key: b_activation
+  th2_key: th2
+  th17_key: th17
+
+  # labels present in cell_type_key
+  b_cell_label: B_cell
+  t_cell_label: T_cell
+
+  # expression handling
+  use_raw: false           # prefer .raw if available
+  layer: null             # set to e.g. "log1p" if you want a layer instead
+  min_cells_per_sample_sender: 3
+  min_cells_per_sample_receiver: 5
+
+  liana:
+    method: aggregate_rank
+    pval_cutoff: 0.05
+
+  immune_filter:
+    mode: quantile
+    obs_key: immune_proxy
+    quantile: 0.90
+
+gse249279:
+  adata_path: /home/glen/ssc_data/processed/GSE249279_spatial_merged.h5ad
+  use_raw: false
+  layer: null
+
+  # immune-enriched spots
+  immune_filter:
+    mode: quantile         # options: "quantile" or "obs_bool"
+    obs_key: immune_proxy  # used if mode=quantile
+    quantile: 0.90         # q=0.90
+    obs_bool_key: is_immune_enriched  # used if mode=obs_bool
+
+  # colocalization / proximity
+  coords_key: spatial      # .obsm["spatial"] typical for Visium
+  top_quantile_expr: 0.90  # "LGALS9-high" and "HAVCR2-high" thresholds
+
+outputs:
+  reports_dir: reports
+  figures_dir: reports/figures
+
+paper6:
+  sender_gene: LGALS9
+  receiver_gene: HAVCR2
+  pair_name: LGALS9→HAVCR2
+  competing_pairs:
+    - {ligand: LGALS9, receptor: HAVCR2}
+    - {ligand: CD274, receptor: PDCD1}
+    - {ligand: CD80, receptor: CTLA4}
+    - {ligand: IL10, receptor: IL10RA}
