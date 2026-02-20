@@ -16,32 +16,46 @@ gse195452:
   b_cell_label: B_cell
   t_cell_label: T_cell
 
-  # expression handling
-  use_raw: false           # prefer .raw if available
-  layer: null             # set to e.g. "log1p" if you want a layer instead
-  min_cells_per_sample_sender: 3
-  min_cells_per_sample_receiver: 5
+  # expression handling (your AnnData has no .raw and no layers)
+  use_raw: false
+  layer: null
 
-  liana:
-    method: aggregate_rank
-    pval_cutoff: 0.05
+  # Targeted LGALS9×HAVCR2 interaction scoring (Option A)
+  targeted:
+    ligand_gene: LGALS9
+    receptor_gene: HAVCR2
 
-  immune_filter:
-    mode: quantile
-    obs_key: immune_proxy
-    quantile: 0.90
+    # quartile assignment for B_activation:
+    # true = compute Q1/Q4 within each sample (required for paired design)
+    quartiles_within_sample: true
+
+    # Minimum cell counts required per sample to compute scores
+    min_b_cells_per_quartile: 5
+    min_t_cells: 10
+
+    # T program aggregation per sample (mean over T cells)
+    program_aggregate: mean
+
+liana:
+  # Used for the competing interactions analysis (top 10 B→T)
+  # Note: LGALS9→HAVCR2 may not appear due to low HAVCR2 prevalence in PBMC T cells.
+  resource: consensus
+  use_raw: false
+  layer: null
+  pval_cutoff: 0.05
 
 gse249279:
   adata_path: /home/glen/ssc_data/processed/GSE249279_spatial_merged.h5ad
   use_raw: false
   layer: null
+  immune_score_key: T_score
 
-  # immune-enriched spots
+  # immune-enriched spots (computed proxy = T_score + B_score + Plasma_score)
   immune_filter:
     mode: quantile         # options: "quantile" or "obs_bool"
-    obs_key: immune_proxy  # used if mode=quantile
+    obs_key: immune_proxy  # if missing, spatial script should compute it
     quantile: 0.90         # q=0.90
-    obs_bool_key: is_immune_enriched  # used if mode=obs_bool
+    obs_bool_key: is_immune_enriched  # used only if mode=obs_bool
 
   # colocalization / proximity
   coords_key: spatial      # .obsm["spatial"] typical for Visium
@@ -50,13 +64,3 @@ gse249279:
 outputs:
   reports_dir: reports
   figures_dir: reports/figures
-
-paper6:
-  sender_gene: LGALS9
-  receiver_gene: HAVCR2
-  pair_name: LGALS9→HAVCR2
-  competing_pairs:
-    - {ligand: LGALS9, receptor: HAVCR2}
-    - {ligand: CD274, receptor: PDCD1}
-    - {ligand: CD80, receptor: CTLA4}
-    - {ligand: IL10, receptor: IL10RA}

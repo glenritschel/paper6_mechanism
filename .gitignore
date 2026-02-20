@@ -1,0 +1,60 @@
+# =========================
+# OS / System junk
+# =========================
+.DS_Store
+Thumbs.db
+*.Zone.Identifier
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+*.mamba*
+*.conda*
+
+# =========================
+# Large data files
+# =========================
+*.h5ad
+*.h5
+*.loom
+data/
+work/
+
+# =========================
+# Generated figures
+# =========================
+reports/figures/
+Figure*.jpg
+
+# =========================
+# Export / packaging artifacts
+# =========================
+paper6_export/
+paper6_figures.zip
+paper6_figure3_spatial.zip
+claude_figures_minus_3.zip
+files.zip
+*.zip
+*.tar.gz
+*.whl
+
+# =========================
+# Manuscripts / drafts
+# =========================
+*.docx
+*.pdf
+
+# =========================
+# Ad-hoc artifacts
+# =========================
+scripts/artifacts/
+

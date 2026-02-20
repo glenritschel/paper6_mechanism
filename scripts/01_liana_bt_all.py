@@ -82,7 +82,9 @@ def main():
 
     pcol = col("pvalue", "p_val", "p_val_adj", "pval", "p_value", "cellphone_pvals")
     if pcol is not None:
-        bt = bt[pd.to_numeric(bt[pcol], errors="coerce") < float(c["liana"]["pval_cutoff"])]
+        lcfg = cfg.get("liana", {})
+        p_cut = float(lcfg.get("pval_cutoff", 0.05))
+        bt = bt[pd.to_numeric(bt[pcol], errors="coerce") < p_cut]
 
     bt["pair"] = bt[ligand_c].astype(str) + "→" + bt[receptor_c].astype(str)
 

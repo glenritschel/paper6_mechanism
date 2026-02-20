@@ -1,2 +1,2 @@
-n_spots_immune,spearman_r_LGALS9_vs_HAVCR2,perm_p_LGALS9_vs_HAVCR2,q_expr,n_LGALS9_high_spots,n_HAVCR2_high_spots,mean_dist_LGALS9hi_to_nearest_HAVCR2hi,median_dist_LGALS9hi_to_nearest_HAVCR2hi
-267,0.16650064776820755,0.026973026973026972,0.9,267,267,0.0,0.0
+n_spots_immune,spearman_r_LGALS9_vs_HAVCR2,perm_p_LGALS9_vs_HAVCR2,q_expr,n_LGALS9_high_spots,n_HAVCR2_high_spots,frac_LGALS9_high,frac_HAVCR2_high,x_quantile_threshold,y_quantile_threshold
+264,0.08468167270007561,0.13186813186813187,0.9,27,264,0.10227272727272728,1.0,0.7454620599746704,0.0

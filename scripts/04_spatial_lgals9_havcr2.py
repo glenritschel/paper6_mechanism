@@ -1,97 +1,150 @@
+#!/usr/bin/env python3
 import argparse
+import yaml
 import numpy as np
 import pandas as pd
 import scanpy as sc
-from utils import read_yaml, get_expr_vec, spearman_perm, die
+import matplotlib.pyplot as plt
+from scipy.stats import spearmanr
+
+
+def get_nested(cfg: dict, paths: list[str], default=None):
+    """Return first found nested key among candidate dot-paths."""
+    for p in paths:
+        cur = cfg
+        ok = True
+        for k in p.split("."):
+            if isinstance(cur, dict) and k in cur:
+                cur = cur[k]
+            else:
+                ok = False
+                break
+        if ok:
+            return cur
+    return default
+
+
+def perm_spearman(x, y, nperm=1000, seed=0):
+    rng = np.random.default_rng(seed)
+    r_obs, _ = spearmanr(x, y)
+    count = 0
+    for _ in range(int(nperm)):
+        y_perm = rng.permutation(y)
+        r_perm, _ = spearmanr(x, y_perm)
+        if abs(r_perm) >= abs(r_obs):
+            count += 1
+    p = (count + 1) / (nperm + 1)
+    return float(r_obs), float(p)
+
+
+def to_dense_1d(X):
+    # AnnData slice can be sparse or dense
+    if hasattr(X, "toarray"):
+        return X.toarray().ravel()
+    return np.asarray(X).ravel()
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--fig", required=True)
+    ap.add_argument("--dpi", type=int, default=300)
     ap.add_argument("--nperm", type=int, default=1000)
     args = ap.parse_args()
 
-    cfg = read_yaml(args.config)
-    c = cfg["gse249279"]
-    ligand = cfg["paper6"]["sender_gene"]
-    receptor = cfg["paper6"]["receiver_gene"]
+    cfg = yaml.safe_load(open(args.config))
 
-    ad = sc.read_h5ad(c["adata_path"])
-    use_raw = bool(c.get("use_raw", True))
-    layer = c.get("layer", None)
+    # --- Resolve config keys robustly ---
+    spatial_path = get_nested(cfg, [
+        "spatial.adata_path",
+        "gse249279.adata_path",
+        "gse249279.merged_adata_path",
+    ])
+    if not spatial_path:
+        raise KeyError("Could not find spatial AnnData path. Expected one of: "
+                       "spatial.adata_path, gse249279.adata_path, gse249279.merged_adata_path")
 
-    f = c["immune_filter"]
-    if f["mode"] == "quantile":
-        k = f["obs_key"]
+    ligand = get_nested(cfg, [
+        "paper6.sender_gene",
+        "paper6.ligand",
+        "paper6.genes.ligand",
+    ], default="LGALS9")
 
-        if k not in ad.obs.columns:
-            # allow a computed proxy based on existing score columns
-            if k == "immune_proxy":
-                needed = ["T_score", "B_score", "Plasma_score"]
-                missing = [x for x in needed if x not in ad.obs.columns]
-                if missing:
-                    die(f"Cannot compute immune_proxy; missing obs columns: {missing}")
-                ad.obs["immune_proxy"] = (
-                    ad.obs["T_score"].astype(float)
-                    + ad.obs["B_score"].astype(float)
-                    + ad.obs["Plasma_score"].astype(float)
-                )
-            else:
-                die(f"Spatial immune score obs key missing: {k}")
+    receptor = get_nested(cfg, [
+        "paper6.receiver_gene",
+        "paper6.receptor",
+        "paper6.genes.receptor",
+    ], default="HAVCR2")
 
-        q = float(f["quantile"])
-        vals = pd.to_numeric(ad.obs[k], errors="coerce").to_numpy()
-        thr = np.nanquantile(vals, q)
-        keep = vals >= thr
-    elif f["mode"] == "obs_bool":
-        k = f["obs_bool_key"]
-        if k not in ad.obs.columns:
-            die(f"Spatial immune bool obs key missing: {k}")
-        keep = ad.obs[k].astype(bool).to_numpy()
-    else:
-        die(f"Unknown immune_filter.mode: {f['mode']}")
+    immune_key = get_nested(cfg, [
+        "spatial.immune_score_key",
+        "gse249279.immune_score_key",
+    ], default="immune_score")
 
-    ad2 = ad[keep].copy()
-    if ad2.n_obs < 10:
-        die(f"Too few immune-enriched spots after filter: {ad2.n_obs}")
+    immune_threshold = float(get_nested(cfg, [
+        "spatial.immune_threshold",
+        "gse249279.immune_threshold",
+    ], default=0.0))
 
-    x = get_expr_vec(ad2, ligand, use_raw=use_raw, layer=layer)
-    y = get_expr_vec(ad2, receptor, use_raw=use_raw, layer=layer)
+    q_expr = float(get_nested(cfg, [
+        "spatial.expression_quantile",
+        "gse249279.expression_quantile",
+        "gse249279.q_expr",
+    ], default=0.90))
 
-    r, p = spearman_perm(x, y, n_perm=args.nperm, seed=0)
+    # --- Load spatial data ---
+    ad = sc.read_h5ad(spatial_path)
 
-    coords_key = c.get("coords_key", "spatial")
-    if coords_key not in ad2.obsm:
-        die(f"Missing spatial coordinates in ad.obsm['{coords_key}']")
-    coords = np.asarray(ad2.obsm[coords_key])
+    if immune_key not in ad.obs.columns:
+        raise KeyError(f"Spatial immune score obs key missing: {immune_key}. "
+                       f"Available obs columns: {list(ad.obs.columns)[:50]}")
 
-    qexpr = float(c.get("top_quantile_expr", 0.90))
-    x_thr = np.nanquantile(x, qexpr)
-    y_thr = np.nanquantile(y, qexpr)
+    if ligand not in ad.var_names or receptor not in ad.var_names:
+        raise ValueError(f"Ligand/receptor not in var_names: {ligand}={ligand in ad.var_names}, "
+                         f"{receptor}={receptor in ad.var_names}")
 
-    x_hi = coords[x >= x_thr]
-    y_hi = coords[y >= y_thr]
+    immune_mask = ad.obs[immune_key].astype(float) > immune_threshold
+    ad_imm = ad[immune_mask].copy()
 
-    def nearest_dist(A, B):
-        if A.shape[0] == 0 or B.shape[0] == 0:
-            return np.array([])
-        d = np.sqrt(((A[:, None, :] - B[None, :, :]) ** 2).sum(axis=2))
-        return d.min(axis=1)
+    x = to_dense_1d(ad_imm[:, ligand].X)
+    y = to_dense_1d(ad_imm[:, receptor].X)
 
-    dists = nearest_dist(x_hi, y_hi)
+    r, p = perm_spearman(x, y, nperm=args.nperm)
 
-    out = pd.DataFrame([{
-        "n_spots_immune": int(ad2.n_obs),
-        "spearman_r_LGALS9_vs_HAVCR2": r,
-        "perm_p_LGALS9_vs_HAVCR2": p,
-        "q_expr": qexpr,
-        "n_LGALS9_high_spots": int(x_hi.shape[0]),
-        "n_HAVCR2_high_spots": int(y_hi.shape[0]),
-        "mean_dist_LGALS9hi_to_nearest_HAVCR2hi": float(np.nanmean(dists)) if dists.size else np.nan,
-        "median_dist_LGALS9hi_to_nearest_HAVCR2hi": float(np.nanmedian(dists)) if dists.size else np.nan
-    }])
-    out.to_csv(args.out, index=False)
+    # quantile thresholds for "high" spots
+    x_thr = float(np.quantile(x, q_expr))
+    y_thr = float(np.quantile(y, q_expr))
+
+    df = pd.DataFrame({
+        "n_spots_immune": [int(ad_imm.n_obs)],
+        f"spearman_r_{ligand}_vs_{receptor}": [r],
+        f"perm_p_{ligand}_vs_{receptor}": [p],
+        "q_expr": [q_expr],
+        f"n_{ligand}_high_spots": [int((x >= x_thr).sum())],
+        f"n_{receptor}_high_spots": [int((y >= y_thr).sum())],
+        f"frac_{ligand}_high": [float((x >= x_thr).mean())],
+        f"frac_{receptor}_high": [float((y >= y_thr).mean())],
+        "x_quantile_threshold": [x_thr],
+        "y_quantile_threshold": [y_thr],
+    })
+
+    df.to_csv(args.out, index=False)
     print(f"[wrote] {args.out}")
+
+    # --- Scatter plot ---
+    plt.figure(figsize=(6, 6))
+    plt.scatter(x, y, alpha=0.6, s=16)
+    plt.axvline(x_thr, linestyle="--")
+    plt.axhline(y_thr, linestyle="--")
+    plt.xlabel(ligand)
+    plt.ylabel(receptor)
+    plt.title(f"{ligand} vs {receptor} (immune-enriched spots)\nSpearman r={r:.3f}, perm p={p:.3f}")
+    plt.tight_layout()
+    plt.savefig(args.fig, dpi=args.dpi)
+    plt.close()
+    print(f"[wrote] {args.fig}")
+
 
 if __name__ == "__main__":
     main()
